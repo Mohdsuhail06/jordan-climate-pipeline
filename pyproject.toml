@@ -12,9 +12,9 @@ license = "MIT"
 authors = [{ name = "Mohammed Suhail" }]
 dependencies = [
     "requests>=2.31",
-    "pandas>=2.2",
-    "duckdb>=1.1",
-    "matplotlib>=3.8",
+    "pandas>=3.0",
+    "duckdb>=2.0",
+    "matplotlib>=3.9",
 ]
 
 [project.optional-dependencies]

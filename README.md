@@ -3,7 +3,6 @@
 [![CI](https://github.com/Mohdsuhail06/jordan-climate-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/Mohdsuhail06/jordan-climate-pipeline/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.11%20|%203.12%20|%203.13-3776AB?logo=python&logoColor=white)
 ![DuckDB](https://img.shields.io/badge/DuckDB-warehouse-FFF000?logo=duckdb&logoColor=black)
-![Coverage](https://img.shields.io/badge/coverage-98%25-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 An end-to-end **ETL pipeline** that collects three years of daily **weather** and **air-quality**
@@ -29,11 +28,11 @@ flowchart LR
 
 | Step | What it does | Code |
 |---|---|---|
-| **Extract** | Calls two public APIs per city, in yearly chunks. Retries automatically on rate limits (429) and server errors (5xx) with exponential backoff. Saves every raw response so runs can be replayed. | [`extract.py`](src/climate_pipeline/extract.py) |
-| **Transform** | Renames fields, fixes types, aggregates 24 hourly pollution readings into daily mean/max, drops days with fewer than 18 hours of data, adds the EPA PM2.5 category. | [`transform.py`](src/climate_pipeline/transform.py) |
-| **Validate** | 15 data-quality rules plus a duplicate check (nulls, physical ranges, `min ≤ max`, `PM2.5 ≤ PM10`, duplicates). Bad rows are **quarantined with the reason**, never silently dropped. | [`validate.py`](src/climate_pipeline/validate.py) |
-| **Load** | Idempotent upserts into a star schema: running the same dates twice never creates duplicates. Every run is audited in `pipeline_runs`. | [`load.py`](src/climate_pipeline/load.py) |
-| **Orchestrate** | One failing city does not stop the run: it is recorded and the run is marked `partial`. | [`pipeline.py`](src/climate_pipeline/pipeline.py) |
+| **Extract** | Calls two public APIs per city, in chunks of up to 366 days. Retries automatically on rate limits (429) and server errors (5xx) with exponential backoff. Keeps every raw response on disk for auditing and debugging. | [`extract.py`](src/climate_pipeline/extract.py) |
+| **Transform** | Renames fields, fixes types, aggregates hourly pollution readings into daily mean/max (recording how many hours each day had), adds the EPA PM2.5 category. | [`transform.py`](src/climate_pipeline/transform.py) |
+| **Validate** | 21 data-quality rules plus a duplicate check (nulls, physical ranges, `min ≤ max`, `PM2.5 ≤ PM10`, at least 18 hourly readings per day). Bad rows are **quarantined with the reason**, never silently dropped. | [`validate.py`](src/climate_pipeline/validate.py) |
+| **Load** | Idempotent upserts into a star schema: running the same dates twice never creates duplicates. Every run is audited in `pipeline_runs`, including runs that crash. | [`load.py`](src/climate_pipeline/load.py) |
+| **Orchestrate** | One failing city does not stop the run: it is recorded and the run is marked `partial`. Exit codes: `0` success, `3` partial, `1` failed, `2` bad input. | [`pipeline.py`](src/climate_pipeline/pipeline.py) |
 | **Analyze** | Six SQL queries + three charts written to `reports/`. | [`report.py`](src/climate_pipeline/report.py), [`sql/`](src/climate_pipeline/sql) |
 
 ### Warehouse schema
@@ -78,8 +77,9 @@ Plus two operational tables: `pipeline_runs` (audit log of every run) and `quara
 
 - **Zarqa has the most polluted air**: average PM2.5 of 16.5 µg/m³, above the WHO daily
   guideline on **49.5% of days**. Amman follows at 39.8%.
-- **Clear seasonal pattern**: fine particles are lowest in **July** in every city and peak in
-  **November–December** and in spring.
+- **Clear seasonal pattern**: fine particles are lowest in **July** in 7 of 8 cities (Aqaba:
+  February) and peak in **November** in most cities. The southern desert cities peak in spring
+  instead (Ma'an in May, Aqaba in April), when dust storms are common.
 - **Dust storms**: on **13 September 2023** a dust event hit the south. Ma'an reached a daily
   PM10 of 241.5 µg/m³, the highest of all 8,768 city-days.
 - **Rain cleans the air**: PM10 is **16% lower** on rainy days (26.1 vs 31.1 µg/m³).
@@ -113,7 +113,7 @@ python -c "import duckdb; print(duckdb.connect('data/warehouse.duckdb').sql('SEL
 
 ## Testing
 
-65 tests, **98% coverage**. They use small hand-built payloads and an in-memory
+74 tests, **98% coverage**. They use small hand-built payloads and an in-memory
 database, so they run offline in a few seconds.
 
 ```bash
@@ -147,6 +147,8 @@ jordan-climate-pipeline/
 - Weather: [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api) (ERA5 reanalysis).
 - Air quality: [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api) (CAMS model).
 - Data by [Open-Meteo.com](https://open-meteo.com/), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Re-running a date range replaces fact rows with fresh values; the quarantine table is an
+  append-only log, so rejected rows are recorded again on every run that sees them.
 - Both sources are **model estimates on a grid**, not readings from ground monitoring stations,
   so local hot-spots (e.g. next to a busy road) are smoothed out.
 

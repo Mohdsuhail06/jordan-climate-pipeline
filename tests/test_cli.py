@@ -131,3 +131,49 @@ def test_failed_run_returns_non_zero(tmp_path, monkeypatch):
     )
 
     assert code == 1
+
+
+def test_start_after_end_is_a_friendly_error(tmp_path, capsys):
+    code = cli.main(
+        [
+            "run",
+            "--start",
+            "2025-02-01",
+            "--end",
+            "2025-01-01",
+            "--cities",
+            "amman",
+            "--db",
+            str(tmp_path / "w.duckdb"),
+            "--raw-dir",
+            str(tmp_path / "raw"),
+        ]
+    )
+
+    assert code == 2
+    assert "start" in capsys.readouterr().err
+
+
+def test_partial_run_has_its_own_exit_code(tmp_path, monkeypatch):
+    def broken(session, city, start, end):
+        raise ExtractError("down")
+
+    monkeypatch.setattr(cli, "fetch_air_quality", broken)
+
+    code = cli.main(
+        [
+            "run",
+            "--start",
+            "2025-01-01",
+            "--end",
+            "2025-01-02",
+            "--cities",
+            "amman",
+            "--db",
+            str(tmp_path / "w.duckdb"),
+            "--raw-dir",
+            str(tmp_path / "raw"),
+        ]
+    )
+
+    assert code == 3

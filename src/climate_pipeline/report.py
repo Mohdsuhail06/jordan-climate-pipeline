@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 from importlib import resources
 from pathlib import Path
 
@@ -131,7 +130,7 @@ def build_report(con: duckdb.DuckDBPyConnection, out_dir: Path) -> Path:
         "# Jordan Climate & Air Quality Report",
         "",
         f"Period: **{first} to {last}** · Weather rows: **{n_weather:,}** · "
-        f"Air-quality rows: **{n_air:,}** · Generated: {dt.date.today()}",
+        f"Air-quality rows: **{n_air:,}**",
         "",
         "## City summary",
         "",

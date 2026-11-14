@@ -1,6 +1,6 @@
 # Jordan Climate & Air Quality Report
 
-Period: **2023-01-01 to 2025-12-31** · Weather rows: **8,768** · Air-quality rows: **8,768** · Generated: 2026-11-14
+Period: **2023-01-01 to 2025-12-31** · Weather rows: **8,768** · Air-quality rows: **8,768**
 
 ## City summary
 

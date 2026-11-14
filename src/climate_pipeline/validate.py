@@ -34,6 +34,9 @@ WEATHER_RULES: list[Rule] = [
     _not_null("temp_max_c"),
     _not_null("temp_min_c"),
     _not_null("temp_mean_c"),
+    _not_null("precipitation_mm"),
+    _not_null("wind_speed_max_kmh"),
+    _not_null("humidity_mean_pct"),
     ("temp_min_c > temp_max_c", lambda df: df["temp_min_c"] > df["temp_max_c"]),
     (
         "temperature out of -30..60 C",
@@ -47,9 +50,17 @@ WEATHER_RULES: list[Rule] = [
     ),
 ]
 
+MIN_HOURS_PER_DAY = 18  # a daily mean from fewer hourly readings is not representative
+
 AIR_RULES: list[Rule] = [
+    (
+        f"hours_observed < {MIN_HOURS_PER_DAY}",
+        lambda df: df["hours_observed"] < MIN_HOURS_PER_DAY,
+    ),
     _not_null("pm2_5_mean"),
     _not_null("pm10_mean"),
+    _not_null("no2_mean"),
+    _not_null("o3_mean"),
     _non_negative("pm2_5_mean"),
     _non_negative("pm10_mean"),
     _non_negative("no2_mean"),
@@ -73,8 +84,11 @@ def _apply_rules(df: pd.DataFrame, rules: list[Rule], dataset: str) -> Validatio
         for idx in df.index[mask]:
             reasons[idx].append(label)
 
-    duplicated = df.duplicated(subset=["city_id", "date"], keep="first")
-    for idx in df.index[duplicated]:
+    # Check duplicates among rows that passed every rule, so a valid copy is kept
+    # even when an earlier copy of the same city/date was invalid.
+    passed = reasons.map(len) == 0
+    duplicated = df[passed].duplicated(subset=["city_id", "date"], keep="first")
+    for idx in duplicated.index[duplicated]:
         reasons[idx].append("duplicate city_id/date")
 
     bad = reasons.map(bool)

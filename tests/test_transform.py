@@ -60,13 +60,14 @@ class TestAirQualityToDaily:
 
         assert df.loc[0, "pm2_5_max"] == 80.0
 
-    def test_days_with_too_few_hours_are_dropped(self, amman):
-        # 2025-01-02 only has 10 hours of data: not enough to trust a daily mean.
+    def test_days_with_too_few_hours_are_kept_with_their_hour_count(self, amman):
+        # 2025-01-02 only has 10 hours of data. It is kept here and the validation
+        # step quarantines it, so incomplete days are never dropped silently.
         payload = make_air_payload({"2025-01-01": 24, "2025-01-02": 10})
 
-        df = air_quality_to_daily(payload, amman, min_hours=18)
+        df = air_quality_to_daily(payload, amman)
 
-        assert df["date"].tolist() == [dt.date(2025, 1, 1)]
+        assert df["hours_observed"].tolist() == [24, 10]
 
     def test_category_column_is_added(self, amman):
         payload = make_air_payload({"2025-01-01": 24}, pm25=40.0)
@@ -95,3 +96,9 @@ def test_pm25_category_uses_epa_2024_breakpoints(value, expected):
 
 def test_pm25_category_of_missing_value_is_none():
     assert pm25_category(float("nan")) is None
+
+
+@pytest.mark.parametrize(("value", "expected"), [(9.05, "Good"), (35.45, "Moderate")])
+def test_pm25_category_truncates_like_the_epa(value, expected):
+    # EPA truncates to one decimal place: 35.45 -> 35.4, which is still "Moderate".
+    assert pm25_category(value) == expected

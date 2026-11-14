@@ -56,9 +56,9 @@ def pm25_category(value: float) -> str | None:
     """Map a daily mean PM2.5 concentration (µg/m³) to its EPA air-quality category."""
     if value is None or math.isnan(value):
         return None
-    rounded = round(value, 1)  # EPA truncates concentrations to one decimal place
+    truncated = math.floor(value * 10 + 1e-9) / 10  # EPA truncates to one decimal place
     for upper, label in _PM25_BREAKPOINTS:
-        if rounded <= upper:
+        if truncated <= upper:
             return label
     return "Hazardous"
 
@@ -79,11 +79,11 @@ def weather_to_frame(payload: dict, city: City) -> pd.DataFrame:
     return df[WEATHER_COLUMNS]
 
 
-def air_quality_to_daily(payload: dict, city: City, min_hours: int = 18) -> pd.DataFrame:
+def air_quality_to_daily(payload: dict, city: City) -> pd.DataFrame:
     """Aggregate hourly pollutant readings into daily mean/max values for one city.
 
-    Days with fewer than `min_hours` hourly readings are dropped, because a daily
-    average built from a handful of hours is not representative.
+    `hours_observed` records how many hourly readings each day had; the validation step
+    quarantines days with too few hours instead of dropping them here.
 
     Raises:
         KeyError: if the payload has no `hourly` block.
@@ -104,7 +104,6 @@ def air_quality_to_daily(payload: dict, city: City, min_hours: int = 18) -> pd.D
         o3_mean=("ozone", "mean"),
         hours_observed=("pm2_5", "count"),
     )
-    daily = daily[daily["hours_observed"] >= min_hours].reset_index(drop=True)
     value_cols = ["pm2_5_mean", "pm2_5_max", "pm10_mean", "pm10_max", "no2_mean", "o3_mean"]
     daily[value_cols] = daily[value_cols].round(2)
     daily["hours_observed"] = daily["hours_observed"].astype("int64")

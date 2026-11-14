@@ -129,3 +129,20 @@ def test_date_chunks_cover_the_range_without_gaps():
         (dt.date(2025, 1, 5), dt.date(2025, 1, 8)),
         (dt.date(2025, 1, 9), dt.date(2025, 1, 10)),
     ]
+
+
+def test_unexpected_error_marks_the_run_failed_and_is_raised(con, amman):
+    def corrupt(city, start, end):
+        return {"daily": {"time": ["not-a-date"]}}
+
+    with pytest.raises(Exception):  # noqa: B017 - any unexpected error must propagate
+        run_pipeline(con, [amman], START, END, corrupt, good_air)
+
+    status, message = con.execute("SELECT status, message FROM pipeline_runs").fetchone()
+    assert status == "failed"
+    assert message
+
+
+def test_date_chunks_rejects_a_non_positive_size():
+    with pytest.raises(ValueError, match="size"):
+        date_chunks(dt.date(2025, 1, 1), dt.date(2025, 1, 2), size=0)

@@ -48,6 +48,8 @@ class RunSummary:
 
 def date_chunks(start: dt.date, end: dt.date, size: int) -> list[tuple[dt.date, dt.date]]:
     """Split [start, end] into consecutive, non-overlapping ranges of at most `size` days."""
+    if size < 1:
+        raise ValueError(f"chunk size must be at least 1 day, got {size}")
     chunks = []
     cursor = start
     while cursor <= end:
@@ -102,9 +104,45 @@ def run_pipeline(
 
     init_schema(con)
     upsert_cities(con, cities)
-    summary = RunSummary(run_id=start_run(con, start, end))
     chunks = date_chunks(start, end, chunk_days)
+    summary = RunSummary(run_id=start_run(con, start, end))
+    try:
+        _run_all_cities(con, cities, chunks, fetch_weather, fetch_air, summary)
+    except Exception as exc:
+        # Never leave a run stuck at "running": record the crash, then re-raise it.
+        summary.status = "failed"
+        finish_run(
+            con,
+            summary.run_id,
+            "failed",
+            summary.rows_loaded,
+            summary.rejected_rows,
+            f"crashed: {exc!r}"[:500],
+        )
+        raise
 
+    total_jobs = 2 * len(cities)
+    if len(summary.failed) == total_jobs:
+        summary.status = "failed"
+    elif summary.failed:
+        summary.status = "partial"
+
+    message = f"failed: {', '.join(summary.failed)}" if summary.failed else "ok"
+    finish_run(
+        con, summary.run_id, summary.status, summary.rows_loaded, summary.rejected_rows, message
+    )
+    log.info("Run %s finished: %s", summary.run_id, summary)
+    return summary
+
+
+def _run_all_cities(
+    con: duckdb.DuckDBPyConnection,
+    cities: Sequence[City],
+    chunks: list[tuple[dt.date, dt.date]],
+    fetch_weather: Fetcher,
+    fetch_air: Fetcher,
+    summary: RunSummary,
+) -> None:
     for city in cities:
         summary.weather_rows += _process(
             "weather",
@@ -128,16 +166,3 @@ def run_pipeline(
             chunks,
             summary,
         )
-
-    total_jobs = 2 * len(cities)
-    if len(summary.failed) == total_jobs:
-        summary.status = "failed"
-    elif summary.failed:
-        summary.status = "partial"
-
-    message = f"failed: {', '.join(summary.failed)}" if summary.failed else "ok"
-    finish_run(
-        con, summary.run_id, summary.status, summary.rows_loaded, summary.rejected_rows, message
-    )
-    log.info("Run %s finished: %s", summary.run_id, summary)
-    return summary

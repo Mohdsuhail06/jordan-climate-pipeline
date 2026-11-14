@@ -12,7 +12,6 @@ import argparse
 import datetime as dt
 import logging
 import sys
-from functools import partial
 from pathlib import Path
 
 from climate_pipeline.config import (
@@ -26,6 +25,9 @@ from climate_pipeline.extract import build_session, fetch_air_quality, fetch_wea
 from climate_pipeline.load import connect
 from climate_pipeline.pipeline import run_pipeline
 from climate_pipeline.report import build_report
+
+# Exit codes let a scheduler tell the outcomes apart.
+EXIT_CODES = {"success": 0, "failed": 1, "partial": 3}  # 2 = bad command-line input
 
 
 def _date(value: str) -> dt.date:
@@ -68,6 +70,12 @@ def _archiving(fetch, session, raw_dir: Path, source: str):
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if args.start > args.end:
+        print(
+            f"error: --start ({args.start}) must be on or before --end ({args.end})",
+            file=sys.stderr,
+        )
+        return 2
     try:
         cities = get_cities(args.cities)
     except ValueError as exc:
@@ -75,8 +83,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     session = build_session()
-    weather = _archiving(partial(fetch_weather), session, args.raw_dir, "weather")
-    air = _archiving(partial(fetch_air_quality), session, args.raw_dir, "air_quality")
+    weather = _archiving(fetch_weather, session, args.raw_dir, "weather")
+    air = _archiving(fetch_air_quality, session, args.raw_dir, "air_quality")
 
     con = connect(args.db)
     try:
@@ -90,7 +98,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     if summary.failed:
         print(f"Failed sources: {', '.join(summary.failed)}")
-    return 1 if summary.status == "failed" else 0
+    return EXIT_CODES[summary.status]
 
 
 def _cmd_report(args: argparse.Namespace) -> int:

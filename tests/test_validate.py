@@ -113,3 +113,33 @@ class TestValidateAirQuality:
         result = validate_air_quality(df)
 
         assert "pm2_5_mean > pm10_mean" in result.rejected.iloc[0]["reason"]
+
+
+def test_null_precipitation_is_rejected(amman):
+    df = _weather(amman)
+    df.loc[0, "precipitation_mm"] = None
+
+    result = validate_weather(df)
+
+    assert "precipitation_mm is null" in result.rejected.iloc[0]["reason"]
+
+
+def test_valid_duplicate_is_kept_when_the_first_copy_is_invalid(amman):
+    df = _weather(amman)
+    bad_copy = df.iloc[[0]].copy()
+    bad_copy["precipitation_mm"] = -1.0
+    df = pd.concat([bad_copy, df], ignore_index=True)  # invalid copy comes first
+
+    result = validate_weather(df)
+
+    assert len(result.valid) == 3
+    assert result.rejected.iloc[0]["reason"] == "precipitation_mm < 0"
+
+
+def test_air_quality_day_with_too_few_hours_is_rejected(amman):
+    df = air_quality_to_daily(make_air_payload({"2025-01-01": 24, "2025-01-02": 10}), amman)
+
+    result = validate_air_quality(df)
+
+    assert len(result.valid) == 1
+    assert "hours_observed < 18" in result.rejected.iloc[0]["reason"]
